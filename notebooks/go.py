@@ -83,7 +83,7 @@ def main():
             mean=[0.485, 0.456, 0.406], # These are RGB mean+std values
             std=[0.229, 0.224, 0.225])  # across a large photo dataset.
     ])
-    img_original = numpy.array([numpy.array(frame) for frame in frames])
+    img_original = torch.stack([torchvision.transforms.ToTensor(numpy.array(frame)) for frame in frames])
     img_data = torch.stack([pil_to_tensor(frame) for frame in frames])
 
     print('total image size:', img_data.shape)
