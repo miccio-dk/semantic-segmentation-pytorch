@@ -28,7 +28,7 @@ def main():
     parser.add_argument('--dest_orig_path', type=str, help='orig frames path', default=None)
     parser.add_argument('--target_idx', type=int, help='target label idx', default=12)
     parser.add_argument('--step', type=int, help='frame skip', default=1)
-    parser.add_argument('--bs', type=int, help='batch size', default=32)
+    parser.add_argument('--bs', type=int, help='batch size', default=16)
     args = parser.parse_args()
 
     target_idx = args.target_idx
@@ -86,8 +86,8 @@ def main():
     n_chunks = img_data.shape[0] // args.bs
     for j, chunk in enumerate(torch.chunk(img_data, n_chunks)):
         frames_batch = {'img_data': chunk.cuda()}
-        output_size = img_data.shape[2:]
-        print(j, 'image size:', img_data.shape)
+        output_size = chunk.shape[2:]
+        print(j, 'image size:', chunk.shape)
 
         # Run the segmentation at the highest resolution.
         with torch.no_grad():
