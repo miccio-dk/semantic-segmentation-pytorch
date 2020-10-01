@@ -83,17 +83,20 @@ def main():
             mean=[0.485, 0.456, 0.406], # These are RGB mean+std values
             std=[0.229, 0.224, 0.225])  # across a large photo dataset.
     ])
-    img_original = torch.stack([torchvision.transforms.ToTensor(numpy.array(frame)) for frame in frames])
+    img_original = torch.stack([torchvision.transforms.ToTensor()(frame) for frame in frames])
     img_data = torch.stack([pil_to_tensor(frame) for frame in frames])
 
     print('total image size:', img_data.shape)
     n_chunks = img_data.shape[0] // args.bs
     k = 0
     img_original_chunks = torch.chunk(img_original, n_chunks)
-    for j, chunk in enumerate(torch.chunk(img_data, n_chunks)):
-        frames_batch = {'img_data': chunk.to(device)}
-        output_size = chunk.shape[2:]
-        print(j, 'image size:', chunk.shape)
+    img_data_chunks = torch.chunk(img_data, n_chunks)
+    print('n of chunks', len(img_data_chunks))
+    for j, dat in enumerate(zip(img_original_chunks, img_data_chunks)):
+        img_orig, img_chunk = dat
+        frames_batch = {'img_data': img_chunk.to(device)}
+        output_size = img_chunk.shape[2:]
+        print(j, 'image size:', img_chunk.shape)
 
         # Run the segmentation at the highest resolution.
         with torch.no_grad():
@@ -104,7 +107,7 @@ def main():
         pred = pred.cpu().numpy()
 
         # store frames
-        for i, imgs in enumerate(zip(pred, img_original_chunks[j])):
+        for imgs in zip(pred, img_orig):
             mask, orig = imgs
             orig[mask == target_idx] = 0
             mask[mask != target_idx] = 0
