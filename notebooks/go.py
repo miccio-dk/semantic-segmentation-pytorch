@@ -28,6 +28,7 @@ def main():
     parser.add_argument('--dest_orig_path', type=str, help='orig frames path', default=None)
     parser.add_argument('--target_idx', type=int, help='target label idx', default=12)
     parser.add_argument('--step', type=int, help='frame skip', default=1)
+    parser.add_argument('--bs', type=int, help='batch size', default=32)
     args = parser.parse_args()
 
     target_idx = args.target_idx
@@ -64,6 +65,14 @@ def main():
     frames = frames[::step]
     print('# of frames:', len(frames))
 
+    dest_path = args.dest_path or (osp.splitext(args.input_path)[0] + '_masks')
+    dest_orig_path = args.dest_orig_path or (osp.splitext(args.input_path)[0] + '_orig')
+    if not os.path.exists(dest_path):
+                 os.makedirs(dest_path) 
+    if not os.path.exists(dest_orig_path):
+                 os.makedirs(dest_orig_path) 
+    print('output dirs', dest_path, dest_orig_path)
+
     # Load and normalize one image as a singleton tensor batch
     pil_to_tensor = torchvision.transforms.Compose([
         torchvision.transforms.ToTensor(),
@@ -73,38 +82,35 @@ def main():
     ])
     img_original = numpy.array([numpy.array(frame) for frame in frames])
     img_data = torch.stack([pil_to_tensor(frame) for frame in frames])
-    frames_batch = {'img_data': img_data.cuda()}
-    output_size = img_data.shape[2:]
-    print('Image size:', output_size)
 
-    # Run the segmentation at the highest resolution.
-    with torch.no_grad():
-        scores = segmentation_module(frames_batch, segSize=output_size)
+    n_chunks = img_data.shape[0] // args.bs
+    for j, chunk in enumerate(torch.chunk(img_data, n_chunks)):
+        frames_batch = {'img_data': chunk.cuda()}
+        output_size = img_data.shape[2:]
+        print(j, 'image size:', img_data.shape)
+
+        # Run the segmentation at the highest resolution.
+        with torch.no_grad():
+            scores = segmentation_module(frames_batch, segSize=output_size)
         
-    # Get the predicted scores for each pixel
-    _, pred = torch.max(scores, dim=1)
-    pred = pred.cpu().numpy()
+        # Get the predicted scores for each pixel
+        _, pred = torch.max(scores, dim=1)
+        pred = pred.cpu().numpy()
 
-    # store frames
-    dest_path = args.dest_path or (osp.splitext(args.input_path)[0] + '_masks')
-    dest_orig_path = args.dest_orig_path or (osp.splitext(args.input_path)[0] + '_orig')
-    if not os.path.exists(dest_path):
-                 os.makedirs(dest_path) 
-    if not os.path.exists(dest_orig_path):
-                 os.makedirs(dest_orig_path) 
-    print(dest_path, dest_orig_path)
-    for i, imgs in enumerate(zip(pred, img_original)):
-        mask, orig = imgs
-        orig[mask == target_idx] = 0
-        mask[mask != target_idx] = 0
-        mask[mask == target_idx] = 255
+        # store frames
+        for i, imgs in enumerate(zip(pred, img_original)):
+            k = j * args.bs + i
+            mask, orig = imgs
+            orig[mask == target_idx] = 0
+            mask[mask != target_idx] = 0
+            mask[mask == target_idx] = 255
 
-        maskimg = PIL.Image.fromarray(numpy.uint8(mask))
-        mask_path = osp.join(dest_path, f'img{i:04}.png')
-        maskimg.save(mask_path)
-        origimg = PIL.Image.fromarray(numpy.uint8(orig))
-        orig_path = osp.join(dest_orig_path, f'img{i:04}.png')
-        origimg.save(orig_path)
+            maskimg = PIL.Image.fromarray(numpy.uint8(mask))
+            mask_path = osp.join(dest_path, f'img{k:04}.png')
+            maskimg.save(mask_path)
+            origimg = PIL.Image.fromarray(numpy.uint8(orig))
+            orig_path = osp.join(dest_orig_path, f'img{k:04}.png')
+            origimg.save(orig_path)
         
         
 if __name__ == "__main__":   
