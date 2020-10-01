@@ -88,6 +88,7 @@ def main():
 
     print('total image size:', img_data.shape)
     n_chunks = img_data.shape[0] // args.bs
+    k = 0
     for j, chunk in enumerate(torch.chunk(img_data, n_chunks)):
         frames_batch = {'img_data': chunk.to(device)}
         output_size = chunk.shape[2:]
@@ -103,7 +104,6 @@ def main():
 
         # store frames
         for i, imgs in enumerate(zip(pred, img_original)):
-            k = j * args.bs + i
             mask, orig = imgs
             orig[mask == target_idx] = 0
             mask[mask != target_idx] = 0
@@ -115,6 +115,7 @@ def main():
             origimg = PIL.Image.fromarray(numpy.uint8(orig))
             orig_path = osp.join(dest_orig_path, f'img{k:04}.png')
             origimg.save(orig_path)
+            k += 1
         
         
 if __name__ == "__main__":   
