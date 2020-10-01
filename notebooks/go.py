@@ -89,6 +89,7 @@ def main():
     print('total image size:', img_data.shape)
     n_chunks = img_data.shape[0] // args.bs
     k = 0
+    img_original_chunks = torch.chunk(img_original, n_chunks)
     for j, chunk in enumerate(torch.chunk(img_data, n_chunks)):
         frames_batch = {'img_data': chunk.to(device)}
         output_size = chunk.shape[2:]
@@ -103,7 +104,7 @@ def main():
         pred = pred.cpu().numpy()
 
         # store frames
-        for i, imgs in enumerate(zip(pred, img_original)):
+        for i, imgs in enumerate(zip(pred, img_original_chunks[j])):
             mask, orig = imgs
             orig[mask == target_idx] = 0
             mask[mask != target_idx] = 0
