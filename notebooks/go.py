@@ -26,10 +26,11 @@ def main():
     parser.add_argument('input_path', type=str, help='input video path')
     parser.add_argument('--dest_path', type=str, help='masks path', default=None)
     parser.add_argument('--dest_orig_path', type=str, help='orig frames path', default=None)
-    parser.add_argument('--target_idx', type=int, help='orig frames path', default=12)
+    parser.add_argument('--target_idx', type=int, help='target label idx', default=12)
+    parser.add_argument('--step', type=int, help='frame skip', default=1)
     args = parser.parse_args()
 
-    target_idx = 12
+    target_idx = args.target_idx
 
     # load labels
     names = {}
@@ -58,7 +59,7 @@ def main():
     segmentation_module.cuda()
 
 
-    step = 10
+    step = args.step
     frames = read_frame_from_videos(args.input_path, 432, 240)
     frames = frames[::step]
     print('# of frames:', len(frames))
@@ -84,9 +85,13 @@ def main():
     _, pred = torch.max(scores, dim=1)
     pred = pred.cpu().numpy()
 
-    # store few frames
+    # store frames
     dest_path = args.dest_path or (osp.splitext(args.input_path)[0] + '_masks')
     dest_orig_path = args.dest_orig_path or (osp.splitext(args.input_path)[0] + '_orig')
+    if not os.path.exists(dest_path):
+                 os.makedirs(dest_path) 
+    if not os.path.exists(dest_orig_path):
+                 os.makedirs(dest_orig_path) 
     print(dest_path, dest_orig_path)
     for i, imgs in enumerate(zip(pred, img_original)):
         mask, orig = imgs
@@ -102,5 +107,5 @@ def main():
         origimg.save(orig_path)
         
         
-if __file__ == 'main':
-    main()
+if __name__ == "__main__":   
+     main()
