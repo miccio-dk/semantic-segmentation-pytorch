@@ -33,6 +33,9 @@ def main():
 
     target_idx = args.target_idx
 
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+
     # load labels
     names = {}
     with open('data/object150_info.csv') as f:
@@ -57,7 +60,7 @@ def main():
     crit = torch.nn.NLLLoss(ignore_index=-1)
     segmentation_module = SegmentationModule(net_encoder, net_decoder, crit)
     segmentation_module.eval()
-    segmentation_module.cuda()
+    segmentation_module.to(device)
 
 
     step = args.step
@@ -83,9 +86,10 @@ def main():
     img_original = numpy.array([numpy.array(frame) for frame in frames])
     img_data = torch.stack([pil_to_tensor(frame) for frame in frames])
 
+    print('total image size:', img_data.shape)
     n_chunks = img_data.shape[0] // args.bs
     for j, chunk in enumerate(torch.chunk(img_data, n_chunks)):
-        frames_batch = {'img_data': chunk.cuda()}
+        frames_batch = {'img_data': chunk.to(device)}
         output_size = chunk.shape[2:]
         print(j, 'image size:', chunk.shape)
 
