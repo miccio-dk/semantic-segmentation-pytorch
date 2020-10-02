@@ -31,7 +31,7 @@ def get_mask(scores, idxs, threshold=0.5):
     pred = np.zeros(scores.shape[1:])
     for idx in idxs:
         pred += scores[idx].numpy()
-    pred[pred > threshold] = 0.9999
+    pred[pred > threshold] = 1.0
     return pred
 
 def main():
@@ -48,7 +48,7 @@ def main():
     parser.add_argument('--dest_orig_path', type=str, help='orig frames path', default=None)
     parser.add_argument('--step', type=int, help='frame skip', default=1)
     parser.add_argument('--bs', type=int, help='batch size', default=16)
-    parser.add_argument('--labels', type=list, nargs='+', help='use --show_labels for full list', default=[12, 116, 20])
+    parser.add_argument('--labels', type=int, nargs='+', help='element labels indexes', default=[12, 116, 20])
     args = parser.parse_args()
 
     # process paths
@@ -109,7 +109,7 @@ def main():
             scores = segmentation_module(frames_batch, segSize=output_size)
 
         # store frames
-        for imgs in zip(scores, img_orig):
+        for imgs in zip(scores.cpu(), img_orig):
             score, orig = imgs
             mask = get_mask(score, args.labels)
             orig = orig.detach().numpy().copy()
@@ -118,7 +118,7 @@ def main():
             mskorig = (orig.T * (1 - mask.T)).T
 
             # convert to pil images and store
-            mask_img = PIL.Image.fromarray(np.uint8(mask))
+            mask_img = PIL.Image.fromarray(np.uint8(mask * 255))
             mask_path = osp.join(dest_path, f'img{k:04}.png')
             mask_img.save(mask_path)
             mskorig_img = PIL.Image.fromarray(np.uint8(mskorig))
