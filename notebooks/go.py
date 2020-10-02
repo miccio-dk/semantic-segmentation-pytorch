@@ -1,16 +1,17 @@
 # System libs
 import warnings
 import argparse
+import os
 import os.path as osp
 import numpy as np
-import os, csv, torch, scipy.io, PIL.Image, torchvision.transforms
+import pandas as pd
+import torch, PIL.Image, torchvision.transforms
 import cv2
 # Our libs
 from mit_semseg.models import ModelBuilder, SegmentationModule
 from mit_semseg.utils import colorEncode
 
 warnings.simplefilter("ignore", UserWarning)
-
 
 #  read frames from video 
 def read_frame_from_videos(vname, w, h):
@@ -23,42 +24,44 @@ def read_frame_from_videos(vname, w, h):
         frames.append(image.resize((w, h)))
         success, image = vidcap.read()
         count += 1
-    return frames   
+    return frames
+
+# generate mask based on list of labels
+def get_mask(scores, idxs, threshold=0.5):
+    pred = np.zeros(scores.shape[1:])
+    for idx in idxs:
+        pred += scores[idx].numpy()
+    pred[pred > threshold] = 0.9999
+    return pred
 
 def main():
-    parser = argparse.ArgumentParser(description='run semantic segmentation on video.')
-    #parser.add_argument('integers', help='an integer for the accumulator')input_path
+    # read labels
+    labels = pd.read_csv('data/object150_info.csv')
+    labels = list(labels['Name'])
+    labels = [lbl.split(';')[0] for lbl in labels]
+    labels_str = 'Available labels: \n' + '\n'.join([f' - {i:3}: {lbl}' for i, lbl in enumerate(labels)])
+
+    # define input args
+    parser = argparse.ArgumentParser(description='run semantic segmentation on video', epilog=labels_str)
     parser.add_argument('input_path', type=str, help='input video path')
     parser.add_argument('--dest_path', type=str, help='masks path', default=None)
     parser.add_argument('--dest_orig_path', type=str, help='orig frames path', default=None)
-    parser.add_argument('--target_idx', type=int, help='target label idx', default=12)
     parser.add_argument('--step', type=int, help='frame skip', default=1)
     parser.add_argument('--bs', type=int, help='batch size', default=16)
+    parser.add_argument('--labels', type=list, nargs='+', help='use --show_labels for full list', default=[12, 116, 20])
     args = parser.parse_args()
 
-    # process input args
-    target_idx = args.target_idx
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    step = args.step
-    
     # process paths
     dest_path = args.dest_path or (osp.splitext(args.input_path)[0] + '_masks')
     dest_orig_path = args.dest_orig_path or (osp.splitext(args.input_path)[0] + '_orig')
-    if not os.path.exists(dest_path):
+    if not osp.exists(dest_path):
                  os.makedirs(dest_path) 
-    if not os.path.exists(dest_orig_path):
+    if not osp.exists(dest_orig_path):
                  os.makedirs(dest_orig_path) 
     print('Output dirs', dest_path, dest_orig_path)
-    
-    # load labels
-    names = {}
-    with open('data/object150_info.csv') as f:
-        reader = csv.reader(f)
-        next(reader)
-        for row in reader:
-            names[int(row[0])] = row[5].split(";")[0]
 
     # network builders
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     net_encoder = ModelBuilder.build_encoder(
         arch='resnet50',
         fc_dim=2048,
@@ -76,7 +79,7 @@ def main():
 
     # load and normalize video
     frames = read_frame_from_videos(args.input_path, 432, 240)
-    frames = frames[::step]
+    frames = frames[::args.step]
     pil_to_tensor = torchvision.transforms.Compose([
         torchvision.transforms.ToTensor(),
         torchvision.transforms.Normalize(
@@ -101,29 +104,26 @@ def main():
         output_size = img_chunk.shape[2:]
         print(f' - {j} Chunk shape (orig/data):', list(img_orig.shape), list(img_chunk.shape))
 
-        # Run the segmentation at the highest resolution.
+        # run segmentation at highest resolution
         with torch.no_grad():
             scores = segmentation_module(frames_batch, segSize=output_size)
-        
-        # Get the predicted scores for each pixel
-        _, pred = torch.max(scores, dim=1)
-        pred = pred.cpu().numpy()
 
         # store frames
-        for imgs in zip(pred, img_orig):
-            mask, orig = imgs
-            orig = orig.clone().detach().numpy()
+        for imgs in zip(scores, img_orig):
+            score, orig = imgs
+            mask = get_mask(score, args.labels)
+            orig = orig.detach().numpy().copy()
             
-            orig[mask == target_idx] = 0
-            mask[mask != target_idx] = 0
-            mask[mask == target_idx] = 255            
+            # calcualte masked frames
+            mskorig = (orig.T * (1 - mask.T)).T
 
-            maskimg = PIL.Image.fromarray(np.uint8(mask))
+            # convert to pil images and store
+            mask_img = PIL.Image.fromarray(np.uint8(mask))
             mask_path = osp.join(dest_path, f'img{k:04}.png')
-            maskimg.save(mask_path)
-            origimg = PIL.Image.fromarray(np.uint8(orig))
+            mask_img.save(mask_path)
+            mskorig_img = PIL.Image.fromarray(np.uint8(mskorig))
             orig_path = osp.join(dest_orig_path, f'img{k:04}.png')
-            origimg.save(orig_path)
+            mskorig_img.save(orig_path)
             k += 1
         
         
