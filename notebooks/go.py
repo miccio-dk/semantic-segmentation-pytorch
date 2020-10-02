@@ -40,17 +40,18 @@ def main():
     labels = pd.read_csv('data/object150_info.csv')
     labels = list(labels['Name'])
     labels = [lbl.split(';')[0] for lbl in labels]
-    labels_str = 'Available labels: \n' + '\n'.join([f' - {i:3}: {lbl}' for i, lbl in enumerate(labels)])
+    labels_str = 'Available labels:\n' + '   '.join([f'{i} {lbl}' for i, lbl in enumerate(labels)])
 
     # define input args
-    parser = argparse.ArgumentParser(description='run semantic segmentation on video', epilog=labels_str)
+    parser = argparse.ArgumentParser(description='run semantic segmentation on video', epilog=labels_str, formatter_class=argparse.RawTextHelpFormatter)
     parser.add_argument('input_path', type=str, help='input video path')
     parser.add_argument('--scale', type=float, help='scaling factor for segmentation', default=2)
+    parser.add_argument('--threshold', type=float, help='minimum probability for masking', default=0.5)
     parser.add_argument('--dest_path', type=str, help='masks path', default=None)
     parser.add_argument('--dest_orig_path', type=str, help='orig frames path', default=None)
     parser.add_argument('--step', type=int, help='frame skip', default=1)
     parser.add_argument('--bs', type=int, help='batch size', default=16)
-    parser.add_argument('--labels', type=int, nargs='+', help='element labels indexes', default=[12, 116, 20])
+    parser.add_argument('--labels', type=int, nargs='+', help='indexes of labels (see --help)', default=[12, 116, 20])
     args = parser.parse_args()
 
     # process paths
@@ -120,7 +121,7 @@ def main():
         for imgs in zip(scores.cpu(), img_orig):
             score, orig = imgs
             # handle mask
-            mask = get_mask(score, args.labels)
+            mask = get_mask(score, args.labels, args.threshold)
             mask_img = PIL.Image.fromarray(np.uint8(mask * 255))
             mask_img = mask_img.resize(img_size)
 
