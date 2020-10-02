@@ -14,16 +14,17 @@ from mit_semseg.utils import colorEncode
 warnings.simplefilter("ignore", UserWarning)
 
 #  read frames from video 
-def read_frame_from_videos(vname, w, h):
+def read_frame_from_videos(vname, res=None):
     frames = []
     vidcap = cv2.VideoCapture(vname)
-    success, image = vidcap.read()
-    count = 0
-    while success:
-        image = PIL.Image.fromarray(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
-        frames.append(image.resize((w, h)))
+    while True:
         success, image = vidcap.read()
-        count += 1
+        if not success:
+            return frames
+        img = PIL.Image.fromarray(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
+        if res is not None:
+            img = img.resize(res)
+        frames.append(img)
     return frames
 
 # generate mask based on list of labels
@@ -44,6 +45,7 @@ def main():
     # define input args
     parser = argparse.ArgumentParser(description='run semantic segmentation on video', epilog=labels_str)
     parser.add_argument('input_path', type=str, help='input video path')
+    parser.add_argument('--scale', type=float, help='scaling factor for segmentation', default=2)
     parser.add_argument('--dest_path', type=str, help='masks path', default=None)
     parser.add_argument('--dest_orig_path', type=str, help='orig frames path', default=None)
     parser.add_argument('--step', type=int, help='frame skip', default=1)
@@ -78,7 +80,7 @@ def main():
     segmentation_module.to(device)
 
     # load and normalize video
-    frames = read_frame_from_videos(args.input_path, 432, 240)
+    frames = read_frame_from_videos(args.input_path)
     frames = frames[::args.step]
     pil_to_tensor = torchvision.transforms.Compose([
         torchvision.transforms.ToTensor(),
@@ -89,6 +91,13 @@ def main():
     img_original = torch.stack([torch.Tensor(np.array(frame)) for frame in frames])
     img_data = torch.stack([pil_to_tensor(frame) for frame in frames])
     print('Data shape (orig/data):', list(img_original.shape), list(img_data.shape))
+    img_size = list(img_data.shape[2:])[::-1]
+    mask_size = [
+        int(img_size[1] / args.scale), 
+        int(img_size[0] / args.scale)
+    ]
+    black = PIL.Image.new('RGB', img_size, color='black')
+    print('Image shape (orig/mask):', img_size, mask_size)
 
     # split data into chunks
     n_chunks = img_data.shape[0] // args.bs
@@ -101,28 +110,28 @@ def main():
     for j, dat in enumerate(zip(img_original_chunks, img_data_chunks)):
         img_orig, img_chunk = dat
         frames_batch = {'img_data': img_chunk.to(device)}
-        output_size = img_chunk.shape[2:]
         print(f' - {j} Chunk shape (orig/data):', list(img_orig.shape), list(img_chunk.shape))
 
         # run segmentation at highest resolution
         with torch.no_grad():
-            scores = segmentation_module(frames_batch, segSize=output_size)
+            scores = segmentation_module(frames_batch, segSize=mask_size)
 
-        # store frames
+        # loop each frame
         for imgs in zip(scores.cpu(), img_orig):
             score, orig = imgs
+            # handle mask
             mask = get_mask(score, args.labels)
-            orig = orig.detach().numpy().copy()
-            
-            # calcualte masked frames
-            mskorig = (orig.T * (1 - mask.T)).T
-
-            # convert to pil images and store
             mask_img = PIL.Image.fromarray(np.uint8(mask * 255))
+            mask_img = mask_img.resize(img_size)
+
+            # handle masked original frame
+            mskorig_img = PIL.Image.fromarray(np.uint8(orig))
+            mskorig_img = PIL.Image.composite(black, mskorig_img, mask_img)
+            
+            # store images
             mask_path = osp.join(dest_path, f'img{k:04}.png')
-            mask_img.save(mask_path)
-            mskorig_img = PIL.Image.fromarray(np.uint8(mskorig))
             orig_path = osp.join(dest_orig_path, f'img{k:04}.png')
+            mask_img.save(mask_path)
             mskorig_img.save(orig_path)
             k += 1
         
